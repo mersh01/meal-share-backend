@@ -160,61 +160,77 @@ module.exports = () => {
   });
 
   // Get group members
-  router.get('/:groupId/members', authMiddleware, async (req, res) => {
-    const { groupId } = req.params;
+  // Get group members (with owner info)
+router.get('/:groupId/members', authMiddleware, async (req, res) => {
+  const { groupId } = req.params;
+  const userId = req.userId;
+  
+  try {
+    // Get group owner info
+    const { data: group, error: groupError } = await supabase
+      .from('groups')
+      .select('user_id as owner_id')
+      .eq('id', groupId)
+      .single();
     
-    try {
-      // Check if user is a member
-      const { data: isMember, error: memberCheckError } = await supabase
-        .from('group_members')
-        .select('id')
-        .eq('group_id', groupId)
-        .eq('user_id', req.userId)
-        .maybeSingle();
-      
-      if (!isMember) {
-        return res.status(403).json({ error: 'You are not a member of this group' });
-      }
-      
-      // Get all members with their emails
-      const { data: members, error: membersError } = await supabase
-        .from('group_members')
-        .select(`
-          id,
-          group_id,
-          user_id,
-          member_name,
-          added_at
-        `)
-        .eq('group_id', groupId);
-      
-      if (membersError) throw membersError;
-      
-      // Get emails for each member
-      const membersWithEmail = [];
-      for (const member of members || []) {
-        const { data: user, error: userError } = await supabase
-          .from('users')
-          .select('email')
-          .eq('id', member.user_id)
-          .single();
-        
-        membersWithEmail.push({
-          id: member.id,
-          group_id: member.group_id,
-          user_id: member.user_id,
-          member_name: member.member_name,
-          email: user?.email || '',
-          added_at: member.added_at
-        });
-      }
-      
-      res.json(membersWithEmail);
-    } catch (error) {
-      console.error('Error in GET /groups/:groupId/members:', error);
-      res.status(500).json({ error: error.message });
+    if (groupError) throw groupError;
+    
+    // Check if user is a member
+    const { data: isMember, error: memberCheckError } = await supabase
+      .from('group_members')
+      .select('id')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    
+    if (!isMember) {
+      return res.status(403).json({ error: 'You are not a member of this group' });
     }
-  });
+    
+    // Get all members with their emails
+    const { data: members, error: membersError } = await supabase
+      .from('group_members')
+      .select(`
+        id,
+        group_id,
+        user_id,
+        member_name,
+        added_at
+      `)
+      .eq('group_id', groupId);
+    
+    if (membersError) throw membersError;
+    
+    // Get emails for each member
+    const membersWithEmail = [];
+    for (const member of members || []) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', member.user_id)
+        .single();
+      
+      membersWithEmail.push({
+        id: member.id,
+        group_id: member.group_id,
+        user_id: member.user_id,
+        member_name: member.member_name,
+        email: user?.email || '',
+        added_at: member.added_at,
+        is_owner: member.user_id === group.owner_id
+      });
+    }
+    
+    res.json({
+      members: membersWithEmail,
+      isOwner: group.owner_id === userId,
+      ownerId: group.owner_id
+    });
+  } catch (error) {
+    console.error('Error in GET /groups/:groupId/members:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
   // Add member to group (only group owner can add)
   router.post('/:groupId/members', authMiddleware, async (req, res) => {
