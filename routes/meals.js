@@ -21,12 +21,13 @@ module.exports = () => {
         return res.status(403).json({ error: 'You are not a member of this group' });
       }
       
-      // Get all meals with participants
+      // Get all meals with participants and creator info
       const { data: meals, error: mealsError } = await supabase
         .from('meals')
         .select(`
           *,
-          payer:users!meals_payer_id_fkey(name)
+          payer:users!meals_payer_id_fkey(name),
+          creator:users!meals_user_id_fkey(id, name)
         `)
         .eq('group_id', groupId)
         .order('date', { ascending: false });
@@ -55,6 +56,8 @@ module.exports = () => {
           payer_name: meal.payer?.name,
           total_amount: meal.total_amount,
           split_type: meal.split_type,
+          creator_id: meal.creator?.id,
+          creator_name: meal.creator?.name,
           participant_names: participants?.map(p => p.users.name).join(','),
           shares: participants?.map(p => p.share_amount).join(',')
         });
@@ -147,19 +150,43 @@ module.exports = () => {
   });
 
   // Delete a meal (only the user who added it can delete)
+  // This will cascade delete meal_participants due to FOREIGN KEY constraint
   router.delete('/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
+    const userId = req.userId;
     
     try {
-      const { error } = await supabase
+      // First, verify the user is the creator of the meal
+      const { data: meal, error: findError } = await supabase
+        .from('meals')
+        .select('user_id, group_id')
+        .eq('id', id)
+        .single();
+      
+      if (findError || !meal) {
+        return res.status(404).json({ error: 'Meal not found' });
+      }
+      
+      if (meal.user_id !== userId) {
+        return res.status(403).json({ error: 'Only the meal creator can delete it' });
+      }
+      
+      // Delete the meal - this will automatically delete meal_participants 
+      // due to FOREIGN KEY ON DELETE CASCADE
+      const { error: deleteError } = await supabase
         .from('meals')
         .delete()
         .eq('id', id)
-        .eq('user_id', req.userId);
+        .eq('user_id', userId);
       
-      if (error) throw error;
+      if (deleteError) throw deleteError;
       
-      res.json({ message: 'Meal deleted' });
+      // Note: Related settlements are NOT automatically deleted because they affect balances.
+      // Users should manually settle or the system will recalculate balances based on remaining meals.
+      
+      res.json({ 
+        message: 'Meal deleted successfully. Related participants removed. Please review balances.' 
+      });
     } catch (error) {
       console.error('Error in DELETE /meals/:id:', error);
       res.status(500).json({ error: error.message });
