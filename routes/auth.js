@@ -110,6 +110,60 @@ module.exports = () => {
     }
   });
 
+  // Change password
+  router.post('/change-password', authMiddleware, async (req, res) => {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    const userId = req.userId;
+    
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: 'All password fields are required' });
+    }
+    
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'New password and confirmation do not match' });
+    }
+    
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    
+    try {
+      // Get user's current password hash
+      const { data: user, error: findError } = await supabase
+        .from('users')
+        .select('password_hash')
+        .eq('id', userId)
+        .single();
+      
+      if (findError || !user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Verify current password
+      const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Current password is incorrect' });
+      }
+      
+      // Hash new password
+      const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+      
+      // Update password
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password_hash: hashedNewPassword })
+        .eq('id', userId);
+      
+      if (updateError) throw updateError;
+      
+      res.json({ message: 'Password changed successfully! Please login again.' });
+    } catch (error) {
+      console.error('Error changing password:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   router.post('/logout', authMiddleware, (req, res) => {
     res.json({ message: 'Logged out successfully' });
   });
