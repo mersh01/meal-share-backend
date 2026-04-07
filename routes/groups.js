@@ -162,19 +162,22 @@ module.exports = () => {
   // Get group members
   // Get group members (with owner info)
 // Get group members (everyone can see members)
+// Get group members (everyone can see members)
 router.get('/:groupId/members', authMiddleware, async (req, res) => {
   const { groupId } = req.params;
   const userId = req.userId;
   
   try {
-    // Get group owner info
+    // Get group owner info - FIXED: use proper select without alias in string
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('user_id as owner_id')
+      .select('user_id')
       .eq('id', groupId)
       .single();
     
     if (groupError) throw groupError;
+    
+    const ownerId = group.user_id;  // Get owner ID from the result
     
     // Check if user is a member (they need to be a member to view)
     const { data: isMember, error: memberCheckError } = await supabase
@@ -202,7 +205,7 @@ router.get('/:groupId/members', authMiddleware, async (req, res) => {
     
     if (membersError) throw membersError;
     
-    // Get emails for each member
+    // Get emails for each member and mark the owner
     const membersWithEmail = [];
     for (const member of members || []) {
       const { data: user, error: userError } = await supabase
@@ -218,14 +221,14 @@ router.get('/:groupId/members', authMiddleware, async (req, res) => {
         member_name: member.member_name,
         email: user?.email || '',
         added_at: member.added_at,
-        is_owner: member.user_id === group.owner_id  // Mark the owner
+        is_owner: member.user_id === ownerId  // Mark the owner
       });
     }
     
     res.json({
       members: membersWithEmail,
-      isOwner: group.owner_id === userId,  // Whether current user is owner
-      ownerId: group.owner_id
+      isOwner: ownerId === userId,  // Whether current user is owner
+      ownerId: ownerId
     });
   } catch (error) {
     console.error('Error in GET /groups/:groupId/members:', error);
