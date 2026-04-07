@@ -161,6 +161,7 @@ module.exports = () => {
 
   // Get group members
   // Get group members (with owner info)
+// Get group members (everyone can see members)
 router.get('/:groupId/members', authMiddleware, async (req, res) => {
   const { groupId } = req.params;
   const userId = req.userId;
@@ -175,7 +176,7 @@ router.get('/:groupId/members', authMiddleware, async (req, res) => {
     
     if (groupError) throw groupError;
     
-    // Check if user is a member
+    // Check if user is a member (they need to be a member to view)
     const { data: isMember, error: memberCheckError } = await supabase
       .from('group_members')
       .select('id')
@@ -217,13 +218,13 @@ router.get('/:groupId/members', authMiddleware, async (req, res) => {
         member_name: member.member_name,
         email: user?.email || '',
         added_at: member.added_at,
-        is_owner: member.user_id === group.owner_id
+        is_owner: member.user_id === group.owner_id  // Mark the owner
       });
     }
     
     res.json({
       members: membersWithEmail,
-      isOwner: group.owner_id === userId,
+      isOwner: group.owner_id === userId,  // Whether current user is owner
       ownerId: group.owner_id
     });
   } catch (error) {
