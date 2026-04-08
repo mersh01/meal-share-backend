@@ -26,12 +26,17 @@ module.exports = () => {
         return res.status(403).json({ error: 'You do not have access to this group' });
       }
       
-      // Get all members of the group
+      // Get all members of the group with their contact info
       const { data: members, error: membersError } = await supabase
         .from('group_members')
         .select(`
           user_id,
-          users!inner(name)
+          users!inner(
+            name,
+            phone,
+            account_number,
+            email
+          )
         `)
         .eq('group_id', groupId)
         .order('users(name)');
@@ -42,10 +47,13 @@ module.exports = () => {
         return res.json({ balances: [], suggestedPayments: [], pendingSettlements: [] });
       }
       
-      // Format members
+      // Format members with contact info
       const formattedMembers = members.map(m => ({
         user_id: m.user_id,
-        name: m.users.name
+        name: m.users.name,
+        phone: m.users.phone,
+        account_number: m.users.account_number,
+        email: m.users.email
       }));
       
       // Initialize balances for each member
@@ -119,7 +127,10 @@ module.exports = () => {
       const balanceArray = formattedMembers.map(member => ({
         id: member.user_id,
         name: member.name,
-        balance: roundedBalances[member.user_id] || 0
+        balance: roundedBalances[member.user_id] || 0,
+        phone: member.phone,
+        account_number: member.account_number,
+        email: member.email
       }));
       
       // Calculate suggested payments - only for the current user's debts
@@ -142,7 +153,10 @@ module.exports = () => {
               from_name: currentUserBalance.name,
               to: creditor.id,
               to_name: creditor.name,
-              amount: Math.round(amount * 100) / 100
+              amount: Math.round(amount * 100) / 100,
+              to_phone: creditor.phone,
+              to_account: creditor.account_number,
+              to_email: creditor.email
             });
             remainingOwe -= amount;
           }
@@ -168,6 +182,8 @@ module.exports = () => {
             amount: p.amount,
             from_name: fromMember?.name || 'Unknown',
             to_name: toMember?.name || 'Unknown',
+            from_phone: fromMember?.phone,
+            to_phone: toMember?.phone,
             isPayer: p.from_friend_id === userId,
             isReceiver: p.to_friend_id === userId
           };

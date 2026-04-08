@@ -7,7 +7,7 @@ const { generateToken, authMiddleware } = require('../config/auth');
 module.exports = () => {
   // Register new user
   router.post('/register', async (req, res) => {
-    const { email, password, name } = req.body;
+    const { email, password, name, phone, account_number } = req.body;
     
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'All fields are required' });
@@ -25,13 +25,32 @@ module.exports = () => {
         return res.status(400).json({ error: 'User already exists' });
       }
       
+      // Check if account number is unique (if provided)
+      if (account_number) {
+        const { data: existingAccount, error: accountError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('account_number', account_number)
+          .single();
+        
+        if (existingAccount) {
+          return res.status(400).json({ error: 'Account number already exists' });
+        }
+      }
+      
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
       
-      // Create user
+      // Create user with phone and account_number
       const { data: user, error: createError } = await supabase
         .from('users')
-        .insert([{ email, password_hash: hashedPassword, name }])
+        .insert([{ 
+          email, 
+          password_hash: hashedPassword, 
+          name,
+          phone: phone || null,
+          account_number: account_number || null
+        }])
         .select()
         .single();
       
@@ -46,10 +65,13 @@ module.exports = () => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          phone: user.phone,
+          account_number: user.account_number
         }
       });
     } catch (error) {
+      console.error('Registration error:', error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -86,7 +108,9 @@ module.exports = () => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          phone: user.phone,
+          account_number: user.account_number
         }
       });
     } catch (error) {
@@ -99,7 +123,7 @@ module.exports = () => {
     try {
       const { data: user, error } = await supabase
         .from('users')
-        .select('id, email, name')
+        .select('id, email, name, phone, account_number')
         .eq('id', req.userId)
         .single();
       
@@ -160,6 +184,37 @@ module.exports = () => {
       res.json({ message: 'Password changed successfully! Please login again.' });
     } catch (error) {
       console.error('Error changing password:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update user profile (phone, account_number)
+  router.put('/profile', authMiddleware, async (req, res) => {
+    const { phone, account_number } = req.body;
+    const userId = req.userId;
+    
+    try {
+      const { data: user, error: updateError } = await supabase
+        .from('users')
+        .update({ phone, account_number })
+        .eq('id', userId)
+        .select()
+        .single();
+      
+      if (updateError) throw updateError;
+      
+      res.json({
+        message: 'Profile updated successfully',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          account_number: user.account_number
+        }
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
       res.status(500).json({ error: error.message });
     }
   });
