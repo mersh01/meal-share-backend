@@ -22,6 +22,7 @@ module.exports = () => {
       }
       
       // Get all meals with participants and creator info
+      // Order by date DESC (newest first) and then by created_at DESC
       const { data: meals, error: mealsError } = await supabase
         .from('meals')
         .select(`
@@ -30,7 +31,8 @@ module.exports = () => {
           creator:users!meals_user_id_fkey(id, name)
         `)
         .eq('group_id', groupId)
-        .order('date', { ascending: false });
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
       
       if (mealsError) throw mealsError;
       
@@ -59,7 +61,8 @@ module.exports = () => {
           creator_id: meal.creator?.id,
           creator_name: meal.creator?.name,
           participant_names: participants?.map(p => p.users.name).join(','),
-          shares: participants?.map(p => p.share_amount).join(',')
+          shares: participants?.map(p => p.share_amount).join(','),
+          created_at: meal.created_at
         });
       }
       
@@ -69,6 +72,7 @@ module.exports = () => {
       res.status(500).json({ error: error.message });
     }
   });
+
 
   // Add a new meal (any group member can add)
   router.post('/', authMiddleware, async (req, res) => {
