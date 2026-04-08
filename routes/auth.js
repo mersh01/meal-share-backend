@@ -134,6 +134,56 @@ module.exports = () => {
     }
   });
 
+  // Update user profile (name, phone, account_number) - email cannot be changed
+  router.put('/profile', authMiddleware, async (req, res) => {
+    const { name, phone, account_number } = req.body;
+    const userId = req.userId;
+    
+    try {
+      // Check if account number is unique (if provided and changed)
+      if (account_number) {
+        const { data: existingAccount, error: accountError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('account_number', account_number)
+          .neq('id', userId)
+          .single();
+        
+        if (existingAccount) {
+          return res.status(400).json({ error: 'Account number already exists' });
+        }
+      }
+      
+      // Update profile
+      const { data: user, error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          name: name || undefined,
+          phone: phone || null,
+          account_number: account_number || null
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+      
+      if (updateError) throw updateError;
+      
+      res.json({
+        message: 'Profile updated successfully',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          account_number: user.account_number
+        }
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Change password
   router.post('/change-password', authMiddleware, async (req, res) => {
     const { currentPassword, newPassword, confirmPassword } = req.body;
@@ -184,37 +234,6 @@ module.exports = () => {
       res.json({ message: 'Password changed successfully! Please login again.' });
     } catch (error) {
       console.error('Error changing password:', error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Update user profile (phone, account_number)
-  router.put('/profile', authMiddleware, async (req, res) => {
-    const { phone, account_number } = req.body;
-    const userId = req.userId;
-    
-    try {
-      const { data: user, error: updateError } = await supabase
-        .from('users')
-        .update({ phone, account_number })
-        .eq('id', userId)
-        .select()
-        .single();
-      
-      if (updateError) throw updateError;
-      
-      res.json({
-        message: 'Profile updated successfully',
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          phone: user.phone,
-          account_number: user.account_number
-        }
-      });
-    } catch (error) {
-      console.error('Error updating profile:', error);
       res.status(500).json({ error: error.message });
     }
   });
